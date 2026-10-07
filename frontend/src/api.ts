@@ -58,6 +58,29 @@ export interface DrawResult {
   owners: { id: number; display_name: string }[]
 }
 
+export interface PlayerGames {
+  players_count: number
+  players: Record<string, {
+    player: { id: number; display_name: string }
+    games_count: number
+    games: EligibleGame[]
+  }>
+}
+
+export interface PerPlayerDrawResult {
+  draw_id: number
+  player: { id: number; display_name: string }
+  eligible_games_count: number
+  selected_game: EligibleGame
+}
+
+export interface PerPlayerDrawResponse {
+  players_count: number
+  eligible_games_count: number
+  allow_duplicates: boolean
+  results: PerPlayerDrawResult[]
+}
+
 export interface DrawHistoryItem {
   id: number
   created_at: string
@@ -130,7 +153,11 @@ export const api = {
   syncAll: () => request<SyncResult[]>('POST', '/players/sync?force=true'),
   commonGames: (player_ids: number[], filters: Filters) =>
     request<CommonGames>('POST', '/selection/common-games', { player_ids, filters }),
+  playerGames: (player_ids: number[], filters: Filters) =>
+    request<PlayerGames>('POST', '/selection/player-games', { player_ids, filters }),
   draw: (player_ids: number[], filters: Filters) => request<DrawResult>('POST', '/draw', { player_ids, filters }),
+  drawPerPlayer: (player_ids: number[], filters: Filters) =>
+    request<PerPlayerDrawResponse>('POST', '/draw/per-player', { player_ids, filters }),
   draws: () => request<DrawHistoryItem[]>('GET', '/draws'),
   apGames: () => request<ApGame[]>('GET', '/archipelago/games'),
   setGameEnabled: (id: number, enabled: boolean) => request<ApGame>('PATCH', `/archipelago/games/${id}`, { enabled }),

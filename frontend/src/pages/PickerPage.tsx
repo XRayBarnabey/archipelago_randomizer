@@ -7,12 +7,14 @@ import {
   type DrawHistoryItem,
   type DrawResult,
   type Mode,
+  type PerPlayerDrawResponse,
+  type PlayerGames,
   type Player,
 } from '../api'
 import DrawResultCard from '../components/DrawResultCard'
 import GameList from '../components/GameList'
 import PlayerCard from '../components/PlayerCard'
-import { Button, ErrorBanner, formatDate } from '../components/ui'
+import { Button, ErrorBanner, formatDate, StatusBadge } from '../components/ui'
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Erreur inconnue')
 
@@ -20,10 +22,13 @@ export default function PickerPage() {
   const [players, setPlayers] = useState<Player[]>([])
   const [selected, setSelected] = useState<number[]>([])
   const [input, setInput] = useState('')
+  const [drawMode, setDrawMode] = useState<'per_player' | 'common'>('per_player')
   const [mode, setMode] = useState<Mode>('recommended')
   const [excludeDrawn, setExcludeDrawn] = useState(false)
   const [common, setCommon] = useState<CommonGames | null>(null)
+  const [playerGames, setPlayerGames] = useState<PlayerGames | null>(null)
   const [result, setResult] = useState<DrawResult | null>(null)
+  const [perPlayerResult, setPerPlayerResult] = useState<PerPlayerDrawResponse | null>(null)
   const [history, setHistory] = useState<DrawHistoryItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [noGames, setNoGames] = useState(false)
@@ -59,27 +64,38 @@ export default function PickerPage() {
     setNoGames(false)
     if (selected.length === 0) {
       setCommon(null)
+      setPlayerGames(null)
       return
     }
     let cancelled = false
-    api
-      .commonGames(selected, { mode, exclude_drawn: excludeDrawn })
+    const preview =
+      drawMode === 'per_player'
+        ? api.playerGames(selected, { mode, exclude_drawn: excludeDrawn })
+        : api.commonGames(selected, { mode, exclude_drawn: excludeDrawn })
+    preview
       .then((c) => {
         if (!cancelled) {
-          setCommon(c)
+          if (drawMode === 'per_player') {
+            setPlayerGames(c as PlayerGames)
+            setCommon(null)
+          } else {
+            setCommon(c as CommonGames)
+            setPlayerGames(null)
+          }
           setError(null)
         }
       })
       .catch((e) => {
         if (!cancelled) {
           setCommon(null)
+          setPlayerGames(null)
           setError(errorMessage(e))
         }
       })
     return () => {
       cancelled = true
     }
-  }, [selected, mode, excludeDrawn, history.length])
+  }, [selected, drawMode, mode, excludeDrawn, history.length])
 
   const toggle = (id: number) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < MAX_PLAYERS ? [...cur, id] : cur))
@@ -119,12 +135,21 @@ export default function PickerPage() {
     guard(async () => {
       setNoGames(false)
       try {
-        setResult(await api.draw(selected, filters))
+        if (drawMode === 'per_player') {
+          setPerPlayerResult(await api.drawPerPlayer(selected, filters))
+          setResult(null)
+        } else {
+          setResult(await api.draw(selected, filters))
+          setPerPlayerResult(null)
+        }
         await loadHistory()
       } catch (e) {
         if (e instanceof ApiError && e.code === 'NO_COMMON_GAMES') {
           setNoGames(true)
           setResult(null)
+        } else if (e instanceof ApiError && e.code === 'NO_COMPATIBLE_GAMES') {
+          setPerPlayerResult(null)
+          setError(errorMessage(e))
         } else throw e
       }
     })
@@ -180,6 +205,21 @@ export default function PickerPage() {
       <section className="mb-6 rounded-lg border border-slate-700 bg-slate-900 p-4">
         <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
           <label>
+            Type de tirage :{' '}
+            <select
+              value={drawMode}
+              onChange={(e) => {
+                setDrawMode(e.target.value as 'per_player' | 'common')
+                setResult(null)
+                setPerPlayerResult(null)
+              }}
+              className="rounded border border-slate-700 bg-slate-800 px-2 py-1"
+            >
+              <option value="per_player">Individuel — un jeu par joueur</option>
+              <option value="common">Commun — le même jeu pour tous</option>
+            </select>
+          </label>
+          <label>
             Mode :{' '}
             <select
               value={mode}
@@ -195,25 +235,78 @@ export default function PickerPage() {
             <input type="checkbox" checked={excludeDrawn} onChange={(e) => setExcludeDrawn(e.target.checked)} />
             Ne pas proposer les jeux déjà tirés
           </label>
-          <Button disabled={busy || selected.length === 0 || common?.eligible_games_count === 0} onClick={draw}>
-            🎲 Tirer un jeu
+          <Button
+            disabled={busy || selected.length === 0 || (drawMode === 'common' && common?.eligible_games_count === 0)}
+            onClick={draw}
+          >
+            {drawMode === 'per_player' ? '🎲 Tirer un jeu par joueur' : '🎲 Tirer un jeu commun'}
           </Button>
         </div>
-        {common && (
+        {drawMode === 'common' && common && (
           <p className="text-sm">
             {common.eligible_games_count} jeux compatibles avec les joueurs sélectionnés
           </p>
         )}
-        {(noGames || common?.eligible_games_count === 0) && (
+        {drawMode === 'per_player' && playerGames && (
+          <div className="space-y-1 text-sm">
+            {selected.map((id) => {
+              const entry = playerGames.players[id]
+              return (
+                <p key={id}>
+                  {entry?.player.display_name ?? players.find((p) => p.id === id)?.display_name}: {entry?.games_count ?? 0}{' '}
+                  jeux compatibles
+                </p>
+              )
+            })}
+          </div>
+        )}
+        {drawMode === 'common' && (noGames || common?.eligible_games_count === 0) && (
           <p className="mt-2 rounded border border-amber-700 bg-amber-950 p-2 text-sm text-amber-200">
             Aucun jeu compatible Archipelago n'est possédé par tous les joueurs sélectionnés. Modifiez les joueurs ou
             les filtres.
           </p>
         )}
+        {drawMode === 'per_player' &&
+          playerGames &&
+          Object.values(playerGames.players).some((entry) => entry.games_count === 0) && (
+            <p className="mt-2 rounded border border-amber-700 bg-amber-950 p-2 text-sm text-amber-200">
+              Au moins un joueur n'a aucun jeu compatible Archipelago. Modifiez les joueurs ou les filtres.
+            </p>
+          )}
       </section>
 
       {result && <DrawResultCard result={result} />}
-      {common && common.games.length > 0 && (
+      {perPlayerResult && (
+        <section className="mb-6 space-y-3">
+          {perPlayerResult.results.map(({ draw_id, player, eligible_games_count, selected_game: game }) => (
+            <article key={draw_id} className="rounded-xl border-2 border-indigo-500 bg-slate-900 p-5">
+              <div className="text-sm uppercase tracking-wide text-indigo-300">🎲 Jeu de {player.display_name}</div>
+              <h2 className="mb-2 text-2xl font-bold">{game.name}</h2>
+              {game.header_image_url && <img src={game.header_image_url} alt="" className="mb-3 max-w-sm rounded" />}
+              <p className="text-sm">
+                Archipelago : <StatusBadge status={game.archipelago_status} detail={game.archipelago_detail_status} /> (
+                {game.archipelago_name})
+              </p>
+              <p className="text-sm">
+                Mapping Steam ↔ Archipelago : {game.mapping_verified ? '✓ Vérifié' : '⚠ Non vérifié'} (
+                {game.mapping_type})
+              </p>
+              <p className="mb-3 text-xs text-slate-400">
+                Tiré parmi {eligible_games_count} jeux compatibles pour ce joueur.
+              </p>
+              <a
+                href={game.steam_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block rounded bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+              >
+                Ouvrir dans Steam
+              </a>
+            </article>
+          ))}
+        </section>
+      )}
+      {drawMode === 'common' && common && common.games.length > 0 && (
         <section className="mb-6">
           <GameList games={common.games} />
         </section>

@@ -95,6 +95,22 @@ class DrawService:
         logger.info("Per-player draw players=%d", len(players))
         return players, per_player, chosen
 
+    def draw_per_player_and_record(self, player_ids: list[int], filters: Filters):
+        players, per_player, chosen = self.draw_per_player(player_ids, filters)
+        draws = {}
+        for player in players:
+            game = chosen[player.id]
+            draw = Draw(
+                selected_game_id=game.archipelago_game.id,
+                steam_app_id=game.steam_app_id,
+                filters=filters.to_json(),
+                participants=[DrawParticipant(player_id=player.id)],
+            )
+            self.db.add(draw)
+            draws[player.id] = draw
+        self.db.commit()
+        return players, per_player, chosen, draws
+
     def history(self, limit: int = 100) -> list[Draw]:
         stmt = (
             select(Draw)

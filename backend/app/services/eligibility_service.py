@@ -21,7 +21,7 @@ class Filters:
     exclude_drawn: bool = False
     exclude_last_n: int | None = None
     excluded_game_ids: list[int] = field(default_factory=list)
-    allow_duplicates: bool = True
+    allow_duplicates: bool = False
 
     def to_json(self) -> dict:
         return {

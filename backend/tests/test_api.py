@@ -2,6 +2,7 @@ from app.integrations.archipelago.base import ArchipelagoGameData
 from app.integrations.steam.errors import SteamLibraryPrivate
 from tests.conftest import game, seed_world
 from tests.test_archipelago import StaticSource
+from app.models import PlayerGameOwnership, SteamGame
 
 SID = "76561198000000001"
 
@@ -67,6 +68,54 @@ def test_common_games_and_draw(client, db):
 
     hist = client.get("/api/draws").json()
     assert len(hist) == 1 and len(hist[0]["players"]) == 3 and hist[0]["filters"]["mode"] == "recommended"
+
+
+def _set_owned_apps(db, player, app_ids):
+    db.query(PlayerGameOwnership).filter_by(player_id=player.id).delete()
+    games = db.query(SteamGame).filter(SteamGame.steam_app_id.in_(app_ids)).all() if app_ids else []
+    db.add_all(PlayerGameOwnership(player_id=player.id, game_id=g.id) for g in games)
+    db.commit()
+
+
+def test_per_player_draw_is_unique_and_saved_to_history(client, db):
+    players, _ = seed_world(db, 2)
+    _set_owned_apps(db, players[0], [100])
+    _set_owned_apps(db, players[1], [101])
+
+    response = client.post("/api/draw/per-player", json={"player_ids": [p.id for p in players]})
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["players_count"] == 2
+    assert body["allow_duplicates"] is False
+    assert [r["player"]["id"] for r in body["results"]] == [p.id for p in players]
+    assert {r["selected_game"]["steam_app_id"] for r in body["results"]} == {100, 101}
+    assert all(r["selected_game"]["mapping_verified"] for r in body["results"])
+    history = client.get("/api/draws").json()
+    assert len(history) == 2
+    assert {item["players"][0]["id"] for item in history} == {p.id for p in players}
+
+
+def test_per_player_draw_without_candidates_returns_business_error(client, db):
+    players, _ = seed_world(db, 2)
+    _set_owned_apps(db, players[1], [])
+
+    response = client.post("/api/draw/per-player", json={"player_ids": [p.id for p in players]})
+    assert response.status_code == 409
+    assert response.json()["error"] == "NO_COMPATIBLE_GAMES"
+    assert players[1].display_name in response.json()["message"]
+    assert client.get("/api/draws").json() == []
+
+
+def test_per_player_draw_reports_unavoidable_duplicate(client, db):
+    players, _ = seed_world(db, 2)
+    for player in players:
+        _set_owned_apps(db, player, [100])
+
+    response = client.post("/api/draw/per-player", json={"player_ids": [p.id for p in players]})
+    assert response.status_code == 409
+    assert response.json()["error"] == "DUPLICATES_UNAVOIDABLE"
+    assert client.get("/api/draws").json() == []
 
 
 def test_draw_exclude_drawn_then_409(client, db):
