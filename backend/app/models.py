@@ -158,3 +158,15 @@ class DrawParticipant(Base):
 
 
 Index("ix_draw_participants_player", DrawParticipant.player_id)
+
+
+class AdminCredential(Base):
+    """Single-row table holding the administration login (salted hash only) and the token signing secret."""
+
+    __tablename__ = "admin_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    secret_key: Mapped[str] = mapped_column(String(128))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

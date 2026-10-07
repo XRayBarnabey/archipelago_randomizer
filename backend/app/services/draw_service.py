@@ -1,7 +1,7 @@
 import logging
 import random
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import AppError
@@ -119,3 +119,10 @@ class DrawService:
             .limit(limit)
         )
         return list(self.db.scalars(stmt))
+
+    def clear_history(self) -> int:
+        count = self.db.scalar(select(func.count()).select_from(Draw)) or 0
+        self.db.execute(delete(DrawParticipant))
+        self.db.execute(delete(Draw))
+        self.db.commit()
+        return count

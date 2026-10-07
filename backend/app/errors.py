@@ -26,3 +26,13 @@ class ConflictError(AppError):
 class ValidationFailed(AppError):
     status_code = 422
     code = "VALIDATION_ERROR"
+
+
+class UnauthorizedError(AppError):
+    status_code = 401
+    code = "UNAUTHORIZED"
+
+
+class TooManyAttempts(AppError):
+    status_code = 429
+    code = "TOO_MANY_ATTEMPTS"

@@ -10,6 +10,10 @@ GENERIC_HEADINGS = {"games", "supported games", "archipelago", "archipelago mult
 def parse_official_games(html: str) -> list[ArchipelagoGameData]:
     """archipelago.gg/games is HTML only: each game is a heading (h2/h3, id attribute preferred)."""
     items = collect(html, lambda tag, attrs: tag in ("h2", "h3"))
+    if not any(text.lower() not in GENERIC_HEADINGS for _t, _a, text in items):
+        # fallback when headings are absent: list items, then links
+        items = collect(html, lambda tag, attrs: tag == "li") or collect(html, lambda tag, attrs: tag == "a")
+        items = [(t, a, x) for t, a, x in items if len(x) <= 100]
     games: dict[str, ArchipelagoGameData] = {}
     for _tag, attrs, text in items:
         if text.lower() in GENERIC_HEADINGS:
