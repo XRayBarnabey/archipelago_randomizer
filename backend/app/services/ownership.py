@@ -23,6 +23,8 @@ class GameOwnershipProvider(Protocol):
 
     def common_games(self, player_ids: list[int]) -> list[CommonGame]: ...
 
+    def games_per_player(self, player_ids: list[int]) -> dict[int, list[CommonGame]]: ...
+
 
 class SteamOwnershipProvider:
     platform = "steam"
@@ -47,3 +49,16 @@ class SteamOwnershipProvider:
             .having(func.count(func.distinct(PlayerGameOwnership.player_id)) == len(player_ids))
         )
         return [CommonGame(*row) for row in self.db.execute(stmt)]
+
+    def games_per_player(self, player_ids: list[int]) -> dict[int, list[CommonGame]]:
+        result: dict[int, list[CommonGame]] = {pid: [] for pid in player_ids}
+        stmt = (
+            select(
+                PlayerGameOwnership.player_id, SteamGame.steam_app_id, SteamGame.name, SteamGame.header_image_url
+            )
+            .join(SteamGame, SteamGame.id == PlayerGameOwnership.game_id)
+            .where(PlayerGameOwnership.player_id.in_(player_ids))
+        )
+        for pid, app_id, name, image in self.db.execute(stmt):
+            result[pid].append(CommonGame(app_id, name, image))
+        return result

@@ -36,6 +36,7 @@ def _startup_archipelago_sync() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    logger.info("archipelago_sync_enabled=%s", settings.archipelago_sync_enabled)
     if settings.archipelago_sync_enabled:
         threading.Thread(target=_startup_archipelago_sync, daemon=True).start()
     yield

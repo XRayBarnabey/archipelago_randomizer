@@ -123,3 +123,29 @@ def test_game_without_steam_mapping_never_eligible(db):
     db.commit()
     names = [g.archipelago_game.name for g in EligibilityService(db).get_eligible_games([p.id for p in players])]
     assert "No Steam" not in names
+
+
+def test_games_per_player_and_draw(db):
+    from app.models import PlayerGameOwnership, SteamGame
+    players, _ = seed_world(db, 2)
+    db.query(PlayerGameOwnership).filter_by(player_id=players[1].id).delete()
+    g100 = db.query(SteamGame).filter_by(steam_app_id=100).one().id
+    db.add(PlayerGameOwnership(player_id=players[1].id, game_id=g100))
+    db.commit()
+    ids = [p.id for p in players]
+    _, per = EligibilityService(db).get_games_per_player(ids)
+    assert [g.steam_app_id for g in per[players[0].id]] == [100, 101]
+    assert [g.steam_app_id for g in per[players[1].id]] == [100]
+
+    svc = DrawService(db, EligibilityService(db))
+    _, _, chosen = svc.draw_per_player(ids, Filters(allow_duplicates=False))
+    assert chosen[players[1].id].steam_app_id == 100
+    assert chosen[players[0].id].steam_app_id == 101
+    _, _, chosen = svc.draw_per_player(ids, Filters())
+    assert chosen[players[1].id].steam_app_id == 100
+    with pytest.raises(AppError) as exc:
+        svc.draw_per_player(ids, Filters(allow_duplicates=False, excluded_game_ids=[per[players[0].id][1].archipelago_game.id]))
+    assert exc.value.code == "DUPLICATES_UNAVOIDABLE"
+    with pytest.raises(AppError) as exc:
+        svc.draw_per_player(ids, Filters(excluded_game_ids=[per[players[1].id][0].archipelago_game.id]))
+    assert exc.value.code == "NO_COMPATIBLE_GAMES"

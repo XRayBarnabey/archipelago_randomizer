@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.errors import AppError, NotFoundError, ValidationFailed
 from app.models import ArchipelagoGame, Draw, GameMapping, SteamPlayer
-from app.services.ownership import GameOwnershipProvider, SteamOwnershipProvider
+from app.services.ownership import CommonGame, GameOwnershipProvider, SteamOwnershipProvider
 
 MAX_PLAYERS = 8
 MIN_PLAYERS = 1
@@ -21,6 +21,7 @@ class Filters:
     exclude_drawn: bool = False
     exclude_last_n: int | None = None
     excluded_game_ids: list[int] = field(default_factory=list)
+    allow_duplicates: bool = True
 
     def to_json(self) -> dict:
         return {
@@ -28,6 +29,7 @@ class Filters:
             "exclude_drawn": self.exclude_drawn,
             "exclude_last_n": self.exclude_last_n,
             "excluded_game_ids": list(self.excluded_game_ids),
+            "allow_duplicates": self.allow_duplicates,
         }
 
 
@@ -75,22 +77,19 @@ class EligibilityService:
             )
         return players
 
-    def get_eligible_games(self, player_ids: list[int], filters: Filters | None = None) -> list[EligibleGame]:
-        filters = filters or Filters()
-        players = self.validate_players(player_ids)
-        ids = [p.id for p in players]
-        common = {g.steam_app_id: g for g in self.ownership.common_games(ids)}
-        if not common:
-            return []
-
+    def _excluded_ids(self, filters: Filters) -> set[int]:
         excluded = set(filters.excluded_game_ids)
         if filters.exclude_drawn:
             excluded |= set(self.db.scalars(select(Draw.selected_game_id)))
         elif filters.exclude_last_n:
             recent = self.db.scalars(select(Draw.selected_game_id).order_by(Draw.id.desc()).limit(filters.exclude_last_n))
             excluded |= set(recent)
+        return excluded
 
-        app_ids = list(common)
+    def _match_games(self, owned: dict[int, CommonGame], filters: Filters, excluded: set[int]) -> list[EligibleGame]:
+        if not owned:
+            return []
+        app_ids = list(owned)
         by_game: dict[int, EligibleGame] = {}
         for i in range(0, len(app_ids), CHUNK):
             stmt = (
@@ -106,6 +105,26 @@ class EligibilityService:
             for mapping, game in self.db.execute(stmt):
                 if game.id in excluded or game.id in by_game or not status_allowed(game, filters.mode):
                     continue
-                cg = common[mapping.steam_app_id]
+                cg = owned[mapping.steam_app_id]
                 by_game[game.id] = EligibleGame(game, mapping, cg.steam_app_id, cg.name, cg.header_image_url)
         return sorted(by_game.values(), key=lambda e: e.archipelago_game.name.lower())
+
+    def get_eligible_games(self, player_ids: list[int], filters: Filters | None = None) -> list[EligibleGame]:
+        filters = filters or Filters()
+        players = self.validate_players(player_ids)
+        ids = [p.id for p in players]
+        common = {g.steam_app_id: g for g in self.ownership.common_games(ids)}
+        return self._match_games(common, filters, self._excluded_ids(filters))
+
+    def get_games_per_player(
+        self, player_ids: list[int], filters: Filters | None = None
+    ) -> tuple[list[SteamPlayer], dict[int, list[EligibleGame]]]:
+        filters = filters or Filters()
+        players = self.validate_players(player_ids)
+        owned = self.ownership.games_per_player([p.id for p in players])
+        excluded = self._excluded_ids(filters)
+        result = {
+            p.id: self._match_games({g.steam_app_id: g for g in owned.get(p.id, [])}, filters, excluded)
+            for p in players
+        }
+        return players, result

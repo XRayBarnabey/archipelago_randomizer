@@ -122,3 +122,14 @@ def test_archipelago_sync_and_games_api(client, api_sources):
     assert client.get("/api/archipelago/games", params={"unmapped": True}).json()
     gid = games[0]["id"]
     assert client.patch(f"/api/archipelago/games/{gid}", json={"enabled": False}).json()["enabled"] is False
+
+
+def test_player_search_and_per_player_endpoints(client, steam):
+    add_player(client, steam, name="Alice")
+    add_player(client, steam, sid="76561198000000002", name="Bob")
+    r = client.get("/api/players/search", params={"query": "ALI"})
+    assert [p["display_name"] for p in r.json()] == ["Alice"]
+    assert [p["display_name"] for p in client.get("/api/players/search", params={"query": "Bobb"}).json()] == ["Bob"]
+    assert client.get("/api/players/search").status_code == 422
+    assert client.post("/api/selection/player-games", json={"player_ids": [1]}).status_code == 409
+    assert client.get("/api/archipelago/status").json()["verified_mappings_count"] == 0

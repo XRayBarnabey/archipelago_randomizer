@@ -107,6 +107,7 @@ class FiltersIn(BaseModel):
     exclude_drawn: bool = False
     exclude_last_n: int | None = Field(default=None, ge=1, le=1000)
     excluded_game_ids: list[int] = Field(default_factory=list, max_length=5000)
+    allow_duplicates: bool = True
 
 
 class SelectionRequest(BaseModel):
@@ -141,6 +142,38 @@ class CommonGamesResponse(BaseModel):
     eligible_games_count: int
     players_count: int
     games: list[EligibleGameOut]
+
+
+class PlayerGamesEntry(BaseModel):
+    player: OwnerOut
+    games_count: int
+    games: list[EligibleGameOut]
+
+
+class PlayerGamesResponse(BaseModel):
+    players_count: int
+    players: dict[int, PlayerGamesEntry]
+
+
+class PlayerDrawOut(BaseModel):
+    player: OwnerOut
+    eligible_games_count: int
+    selected_game: EligibleGameOut
+
+
+class DrawPerPlayerResponse(BaseModel):
+    players_count: int
+    allow_duplicates: bool
+    draws: dict[int, PlayerDrawOut]
+
+
+class ArchipelagoStatusOut(BaseModel):
+    sync_enabled: bool
+    games_count: int
+    enabled_games_count: int
+    mappings_count: int
+    verified_mappings_count: int
+    games_with_verified_mapping: int
 
 
 class DrawResponse(BaseModel):
