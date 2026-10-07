@@ -149,6 +149,7 @@ export default function PickerPage() {
           setResult(null)
         } else if (e instanceof ApiError && e.code === 'NO_COMPATIBLE_GAMES') {
           setPerPlayerResult(null)
+          setError(errorMessage(e))
         } else throw e
       }
     })
