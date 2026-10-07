@@ -79,6 +79,14 @@ Seul un hash salé (scrypt) est stocké en base. `POST /api/admin/login` renvoie
 l'en-tête HTTP `Authorization` (schéma Bearer) ; changer le mot de passe invalide les anciens jetons. Les échecs de connexion sont ralentis puis
 bloqués temporairement (HTTP 429) après 5 essais. Les routes protégées répondent `401 {"error": "UNAUTHORIZED", ...}`.
 
+## Logo de l'application
+
+Un logo PNG transparent s'affiche en haut à gauche (max. 40 px de haut, lien vers l'onglet Tirage). Deux sources, par priorité :
+1. Administration → « Logo de l'application » : « Téléverser » (PNG, 2 Mo max) / « Supprimer le logo ». Stocké en base
+   (table `app_logo`), il survit aux redémarrages. API : `POST|DELETE /api/admin/logo` (admin), `GET /api/logo` publique (404 sans logo).
+2. Fichier statique par défaut `frontend/public/logo.png` (ignoré silencieusement s'il est absent).
+Sans logo, le titre texte est affiché.
+
 ## Utilisation
 
 1. **Ajouter les joueurs** : SteamID64, URL `steamcommunity.com/profiles/…`, `/id/…` ou vanity URL. La bibliothèque est synchronisée à l'ajout.

@@ -20,6 +20,8 @@ PROTECTED = [
     ("delete", "/api/mappings/1"),
     ("get", "/api/admin/session"),
     ("post", "/api/admin/password"),
+    ("post", "/api/admin/logo"),
+    ("delete", "/api/admin/logo"),
 ]
 
 
@@ -121,3 +123,30 @@ def test_official_games_source_registered_and_idempotent(db, settings):
 def test_official_parser_falls_back_to_list_items_and_links():
     assert [g.name for g in parse_official_games("<ul><li>Hollow Knight</li><li>Zillion</li></ul>")] == ["Hollow Knight", "Zillion"]
     assert [g.name for g in parse_official_games('<a href="/g/1">Timespinner</a>')] == ["Timespinner"]
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def test_logo_lifecycle(client, admin):
+    assert client.get("/api/logo").status_code == 404
+    r = client.post("/api/admin/logo", files={"file": ("logo.png", PNG, "image/png")})
+    assert r.status_code == 204
+    r = client.get("/api/logo", headers={"Authorization": ""})
+    assert r.status_code == 200 and r.content == PNG and r.headers["content-type"] == "image/png"
+    new = PNG + b"x"
+    assert client.post("/api/admin/logo", files={"file": ("l.png", new, "image/png")}).status_code == 204
+    assert client.get("/api/logo").content == new
+    assert client.delete("/api/admin/logo").status_code == 204
+    assert client.get("/api/logo").status_code == 404
+
+
+def test_logo_rejects_invalid(client, admin):
+    r = client.post("/api/admin/logo", files={"file": ("a.txt", b"hello", "text/plain")})
+    assert r.status_code == 422
+    r = client.post("/api/admin/logo", files={"file": ("a.png", b"not a png", "image/png")})
+    assert r.status_code == 422
+    big = PNG + b"\x00" * (2 * 1024 * 1024)
+    r = client.post("/api/admin/logo", files={"file": ("a.png", big, "image/png")})
+    assert r.status_code == 422
+    assert client.get("/api/logo").status_code == 404
