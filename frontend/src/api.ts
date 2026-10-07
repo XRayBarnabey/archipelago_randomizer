@@ -206,7 +206,28 @@ export const api = {
   updateMapping: (id: number, patch: Partial<Pick<Mapping, 'steam_app_id' | 'verified'>>) =>
     request<Mapping>('PUT', `/mappings/${id}`, patch),
   deleteMapping: (id: number) => request<void>('DELETE', `/mappings/${id}`),
+  uploadLogo: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const token = getToken()
+    const res = await fetch('/api/admin/logo', {
+      method: 'POST',
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      if (res.status === 401) {
+        setToken(null)
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+      }
+      const data = await res.json().catch(() => ({}))
+      throw new ApiError(res.status, data.error ?? 'ERROR', data.message ?? `Erreur ${res.status}`)
+    }
+  },
+  deleteLogo: () => request<void>('DELETE', '/admin/logo'),
   autoMatch: () => request<{ created: number }>('POST', '/mappings/auto-match'),
 }
+
+export const LOGO_CHANGED_EVENT = 'logo-changed'
 
 export const MAX_PLAYERS = 8

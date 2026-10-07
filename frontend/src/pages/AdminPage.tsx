@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type ApGame, type Mapping, type Source } from '../api'
+import { api, LOGO_CHANGED_EVENT, type ApGame, type Mapping, type Source } from '../api'
 import { Button, ErrorBanner, StatusBadge, formatDate } from '../components/ui'
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Erreur inconnue')
@@ -44,12 +44,64 @@ export default function AdminPage() {
       if (failed.length) setError(failed.map((f) => `${f.source} : ${f.error}`).join(' | '))
     })
 
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoVersion, setLogoVersion] = useState(0)
+  const [logoVisible, setLogoVisible] = useState(true)
+  const logoChanged = () => {
+    setLogoVersion((v) => v + 1)
+    setLogoVisible(true)
+    window.dispatchEvent(new Event(LOGO_CHANGED_EVENT))
+  }
+  const uploadLogo = () =>
+    run(async () => {
+      if (!logoFile) return
+      await api.uploadLogo(logoFile)
+      setLogoFile(null)
+      logoChanged()
+    })
+  const removeLogo = () =>
+    run(async () => {
+      await api.deleteLogo()
+      logoChanged()
+    })
+
   const unverified = mappings.filter((m) => !m.verified)
   const visible = games.filter((g) => g.name.toLowerCase().includes(filter.toLowerCase()))
 
   return (
     <div className="space-y-8">
       <ErrorBanner message={error} />
+
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Logo de l'application</h2>
+        <div className="mb-2 flex h-20 items-center rounded bg-slate-950 p-2">
+          {logoVisible ? (
+            <img
+              src={`/api/logo?v=${logoVersion}`}
+              alt="Aperçu du logo"
+              className="max-h-16 object-contain"
+              onError={() => setLogoVisible(false)}
+            />
+          ) : (
+            <span className="text-sm text-slate-400">Aucun logo personnalisé</span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept="image/png"
+            className="text-sm"
+            onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
+          />
+          <Button disabled={busy || !logoFile} onClick={uploadLogo}>
+            Téléverser
+          </Button>
+          <Button disabled={busy || !logoVisible} onClick={removeLogo}>
+            Supprimer le logo
+          </Button>
+        </div>
+        <p className="mt-1 text-xs text-slate-400">PNG transparent, 2 Mo maximum.</p>
+      </section>
 
       <section>
         <div className="mb-2 flex items-center gap-3">

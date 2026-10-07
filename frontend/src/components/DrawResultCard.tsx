@@ -4,10 +4,10 @@ import { StatusBadge } from './ui'
 export default function DrawResultCard({ result }: { result: DrawResult }) {
   const g = result.selected_game
   return (
-    <section className="mb-6 rounded-xl border-2 border-indigo-500 bg-slate-900 p-5">
-      <div className="text-sm uppercase tracking-wide text-indigo-300">🎲 Votre jeu</div>
-      <h2 className="mb-2 text-3xl font-bold">{g.name}</h2>
-      {g.header_image_url && <img src={g.header_image_url} alt="" className="mb-3 max-w-sm rounded" />}
+    <section className="mb-6 max-w-md rounded-lg border-2 border-indigo-500 bg-slate-900 p-3">
+      <div className="text-xs uppercase tracking-wide text-indigo-300">🎲 Votre jeu</div>
+      <h2 className="mb-2 text-lg font-bold leading-tight">{g.name}</h2>
+      {g.header_image_url && <img src={g.header_image_url} alt="" className="mb-2 max-h-24 w-full rounded object-cover" />}
       <p className="text-sm">
         Archipelago : <StatusBadge status={g.archipelago_status} detail={g.archipelago_detail_status} /> ({g.archipelago_name})
       </p>
@@ -28,7 +28,7 @@ export default function DrawResultCard({ result }: { result: DrawResult }) {
         href={g.steam_url}
         target="_blank"
         rel="noreferrer"
-        className="inline-block rounded bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+        className="inline-block rounded bg-indigo-600 px-3 py-1 text-xs font-medium hover:bg-indigo-500"
       >
         Ouvrir dans Steam
       </a>

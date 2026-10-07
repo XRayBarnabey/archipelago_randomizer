@@ -288,28 +288,30 @@ export default function PickerPage() {
 
       {result && <DrawResultCard result={result} />}
       {perPlayerResult && (
-        <section className="mb-6 space-y-3">
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {perPlayerResult.results.map(({ draw_id, player, eligible_games_count, selected_game: game }) => (
-            <article key={draw_id} className="rounded-xl border-2 border-indigo-500 bg-slate-900 p-5">
-              <div className="text-sm uppercase tracking-wide text-indigo-300">🎲 Jeu de {player.display_name}</div>
-              <h2 className="mb-2 text-2xl font-bold">{game.name}</h2>
-              {game.header_image_url && <img src={game.header_image_url} alt="" className="mb-3 max-w-sm rounded" />}
-              <p className="text-sm">
+            <article key={draw_id} className="flex flex-col rounded-lg border-2 border-indigo-500 bg-slate-900 p-3">
+              <div className="text-xs uppercase tracking-wide text-indigo-300">🎲 Jeu de {player.display_name}</div>
+              <h2 className="mb-2 text-lg font-bold leading-tight">{game.name}</h2>
+              {game.header_image_url && (
+                <img src={game.header_image_url} alt="" className="mb-2 max-h-24 w-full rounded object-cover" />
+              )}
+              <p className="text-xs">
                 Archipelago : <StatusBadge status={game.archipelago_status} detail={game.archipelago_detail_status} /> (
                 {game.archipelago_name})
               </p>
-              <p className="text-sm">
+              <p className="text-xs">
                 Mapping Steam ↔ Archipelago : {game.mapping_verified ? '✓ Vérifié' : '⚠ Non vérifié'} (
                 {game.mapping_type})
               </p>
-              <p className="mb-3 text-xs text-slate-400">
+              <p className="mb-2 text-xs text-slate-400">
                 Tiré parmi {eligible_games_count} jeux compatibles pour ce joueur.
               </p>
               <a
                 href={game.steam_url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block rounded bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+                className="mt-auto inline-block self-start rounded bg-indigo-600 px-3 py-1 text-xs font-medium hover:bg-indigo-500"
               >
                 Ouvrir dans Steam
               </a>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -12,9 +12,11 @@ from app.api.deps import (
     get_steam_service,
 )
 from app.config import get_settings
+from app.db import utcnow
 from app.errors import NotFoundError, ValidationFailed
 from app.models import (
     AdminCredential,
+    AppLogo,
     ArchipelagoGame,
     ArchipelagoSourceRecord,
     GameMapping,
@@ -431,3 +433,43 @@ def admin_password(
         raise ValidationFailed("La confirmation ne correspond pas au nouveau mot de passe.")
     token, expires = auth.change_credentials(cred, body.current_password, body.new_password, body.new_username)
     return _session_out(auth, cred, token, expires)
+
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+MAX_LOGO_BYTES = 2 * 1024 * 1024
+
+
+@router.get("/logo")
+def get_logo(db: Session = Depends(get_db)):
+    logo = db.scalar(select(AppLogo))
+    if logo is None:
+        raise NotFoundError("Aucun logo n'est défini.")
+    return Response(content=logo.data, media_type=logo.content_type, headers={"Cache-Control": "no-cache"})
+
+
+@admin_router.post("/admin/logo", status_code=204)
+async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if (file.content_type or "").lower() != "image/png":
+        raise ValidationFailed("Le logo doit être un fichier PNG.")
+    data = await file.read(MAX_LOGO_BYTES + 1)
+    if len(data) > MAX_LOGO_BYTES:
+        raise ValidationFailed("Le logo ne doit pas dépasser 2 Mo.")
+    if not data.startswith(PNG_SIGNATURE):
+        raise ValidationFailed("Le fichier n'est pas un PNG valide.")
+    logo = db.scalar(select(AppLogo))
+    if logo is None:
+        db.add(AppLogo(content_type="image/png", data=data))
+    else:
+        logo.data = data
+        logo.updated_at = utcnow()
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.delete("/admin/logo", status_code=204)
+def delete_logo(db: Session = Depends(get_db)):
+    logo = db.scalar(select(AppLogo))
+    if logo is not None:
+        db.delete(logo)
+        db.commit()
+    return Response(status_code=204)
