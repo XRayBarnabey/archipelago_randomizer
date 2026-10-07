@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import utcnow
-from app.integrations.archipelago.base import STATUS_RANK, ArchipelagoGameData, ArchipelagoSource
+from app.integrations.archipelago.base import STATUS_RANK, ArchipelagoGameData, ArchipelagoSource, SourceFetchError
 from app.models import ArchipelagoGame, ArchipelagoGameSource, ArchipelagoSourceRecord
 from app.normalize import slugify
 from app.services.mapping_service import MappingService
@@ -76,7 +76,7 @@ class ArchipelagoService:
                 self.db.rollback()
                 rec = self.db.get(ArchipelagoSourceRecord, rec.id)
                 rec.last_sync_status = "error"
-                rec.last_error = str(exc) or type(exc).__name__
+                rec.last_error = (str(exc) if isinstance(exc, SourceFetchError) else "") or type(exc).__name__
                 self.db.commit()
                 logger.warning("Archipelago source %r failed: %s", src.name, type(exc).__name__)
                 results.append({"source": src.name, "status": "error", "games_count": 0, "error": rec.last_error})

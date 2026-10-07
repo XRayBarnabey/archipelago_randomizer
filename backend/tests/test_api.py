@@ -110,7 +110,7 @@ def test_archipelago_sync_and_games_api(client, api_sources):
     api_sources.extend(
         [
             StaticSource("ok", "official", [ArchipelagoGameData("Game A", status="official")]),
-            StaticSource("down", "community", error=RuntimeError("unavailable")),
+            StaticSource("down", "community", error=__import__("app.integrations.archipelago.base", fromlist=["x"]).SourceFetchError("unavailable")),
         ]
     )
     results = {r["source"]: r["status"] for r in client.post("/api/archipelago/sync").json()}
