@@ -97,6 +97,17 @@ export default function PickerPage() {
     }
   }, [selected, drawMode, mode, excludeDrawn, history.length])
 
+  const clearHistory = async () => {
+    if (!window.confirm("Vider tout l'historique des tirages ? Les jeux déjà tirés pourront de nouveau être proposés.")) return
+    try {
+      await api.clearDraws()
+      await loadHistory()
+      setError(null)
+    } catch (e) {
+      setError(errorMessage(e))
+    }
+  }
+
   const toggle = (id: number) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length < MAX_PLAYERS ? [...cur, id] : cur))
 
@@ -313,7 +324,14 @@ export default function PickerPage() {
       )}
 
       <section>
-        <h2 className="mb-2 text-lg font-semibold">Historique</h2>
+        <div className="mb-2 flex items-center gap-3">
+          <h2 className="text-lg font-semibold">Historique</h2>
+          {history.length > 0 && (
+            <Button className="bg-red-800 hover:bg-red-700" onClick={clearHistory}>
+              Vider l'historique
+            </Button>
+          )}
+        </div>
         {history.length === 0 && <p className="text-sm text-slate-400">Aucun tirage.</p>}
         <ul className="space-y-1 text-sm">
           {history.map((d) => (

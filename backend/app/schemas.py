@@ -208,3 +208,27 @@ class DrawHistoryItem(BaseModel):
     steam_app_id: int | None
     steam_url: str | None
     players: list[OwnerOut]
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class SessionOut(BaseModel):
+    authenticated: bool = True
+    username: str
+    default_credentials: bool
+    token: str | None = None
+    expires_at: int | None = None
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+    confirm_password: str = Field(min_length=1, max_length=256)
+    new_username: str | None = Field(default=None, max_length=64)
+
+
+class ClearHistoryOut(BaseModel):
+    deleted: int

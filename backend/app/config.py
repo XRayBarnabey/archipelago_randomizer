@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     archipelago_sync_enabled: bool = False
     http_timeout: float = 15.0
     environment: str = "production"
+    admin_secret_key: str = ""
+    admin_token_ttl: int = 12 * 3600
+    admin_login_delay: float = 0.5
+    admin_max_failed_logins: int = 5
+    admin_lockout_seconds: int = 300
 
     @field_validator("database_url")
     @classmethod

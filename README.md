@@ -64,11 +64,20 @@ L'interface est disponible sur http://localhost:8080 (`FRONTEND_PORT` pour chang
 | `LOG_LEVEL` | `INFO` par défaut |
 | `STEAM_CACHE_DURATION` | secondes pendant lesquelles une bibliothèque est « fraîche » (défaut 3600) |
 | `ARCHIPELAGO_SYNC_ENABLED` | synchronise les sources Archipelago au démarrage du backend |
+| `ADMIN_SECRET_KEY` | secret de signature des jetons d'administration (vide : secret aléatoire généré et conservé en base) |
 
 ### Obtenir une clé Steam API
 
 Rendez-vous sur https://steamcommunity.com/dev/apikey, connectez-vous et déclarez un domaine (ex. `localhost`).
 Les bibliothèques ne sont lisibles que si le profil **et** les « Détails des jeux » sont publics.
+
+## Administration protégée
+
+Identifiants par défaut : **`admin` / `admin`** (une bannière d'avertissement s'affiche tant qu'ils n'ont pas été changés).
+Changez-les dans Administration → « Changer le mot de passe » (mot de passe actuel, nouveau, confirmation ; identifiant optionnel).
+Seul un hash salé (scrypt) est stocké en base. `POST /api/admin/login` renvoie un jeton signé (HMAC, expiration 12 h) à envoyer dans
+l'en-tête HTTP `Authorization` (schéma Bearer) ; changer le mot de passe invalide les anciens jetons. Les échecs de connexion sont ralentis puis
+bloqués temporairement (HTTP 429) après 5 essais. Les routes protégées répondent `401 {"error": "UNAUTHORIZED", ...}`.
 
 ## Utilisation
 
@@ -96,7 +105,7 @@ seul l'App ID exact présent dans la bibliothèque compte.
 
 Principales routes (`/api/…`) : `health`, `players` (+ `/{id}`, `/{id}/sync`, `/sync`), `archipelago/games|sources|sync`,
 `mappings` (+ `/{id}`, `/auto-match`), `selection/common-games`, `selection/player-games`, `draw` (commun, rétrocompatible),
-`draw/per-player` (un résultat par joueur, unicité activée par défaut), `draws`. L'historique commun reste un élément avec tous ses joueurs ;
+`draw/per-player` (un résultat par joueur, unicité activée par défaut), `draws` (`DELETE /api/draws` vide l'historique), `admin/login|logout|session|password`. L'historique commun reste un élément avec tous ses joueurs ;
 les tirages individuels sont enregistrés comme un élément par joueur. Erreurs métier : `{"error": CODE, "message": …}`.
 
 ## Tests
@@ -116,7 +125,9 @@ Les tests utilisent SQLite en mémoire et des mocks : aucun appel à Steam ou Ar
   développement (sans accès à ces domaines). Les parseurs sont tolérants mais « best effort » et couverts par des fixtures ;
   le wiki utilise l'API MediaWiki structurée. En cas de changement de format, la source passe en erreur sans affecter les autres
   et les anciennes données sont conservées — adaptez alors le parseur concerné.
-- Aucune authentification (architecture prête : dépendances FastAPI) ; à n'exposer que sur un réseau local.
+- La page **Administration** et les routes d'administration de l'API (`/api/archipelago/*`, `/api/mappings/*`) sont protégées par un
+  identifiant/mot de passe, mais le tirage, les joueurs et l'historique (y compris « Vider l'historique ») restent publics ;
+  à n'exposer que sur un réseau de confiance.
 - Le tirage uniforme n'a pas de pondération.
 
 ## Dépannage

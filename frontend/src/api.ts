@@ -133,15 +133,40 @@ export class ApiError extends Error {
   }
 }
 
+export interface AdminSession {
+  authenticated: boolean
+  username: string
+  default_credentials: boolean
+  token: string | null
+  expires_at: number | null
+}
+
+const TOKEN_KEY = 'admin_token'
+export const UNAUTHORIZED_EVENT = 'admin-unauthorized'
+
+export const getToken = () => sessionStorage.getItem(TOKEN_KEY)
+export const setToken = (token: string | null) =>
+  token ? sessionStorage.setItem(TOKEN_KEY, token) : sessionStorage.removeItem(TOKEN_KEY)
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const token = getToken()
+  if (token) headers.Authorization = 'Bearer ' + token
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new ApiError(res.status, data.error ?? 'ERROR', data.message ?? `Erreur ${res.status}`)
+  if (!res.ok) {
+    if (res.status === 401 && path !== '/admin/login' && path !== '/admin/password') {
+      setToken(null)
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+    }
+    throw new ApiError(res.status, data.error ?? 'ERROR', data.message ?? `Erreur ${res.status}`)
+  }
   return data as T
 }
 
@@ -159,6 +184,18 @@ export const api = {
   drawPerPlayer: (player_ids: number[], filters: Filters) =>
     request<PerPlayerDrawResponse>('POST', '/draw/per-player', { player_ids, filters }),
   draws: () => request<DrawHistoryItem[]>('GET', '/draws'),
+  clearDraws: () => request<{ deleted: number }>('DELETE', '/draws'),
+  login: (username: string, password: string) =>
+    request<AdminSession>('POST', '/admin/login', { username, password }),
+  logout: () => request<void>('POST', '/admin/logout'),
+  session: () => request<AdminSession>('GET', '/admin/session'),
+  changePassword: (current_password: string, new_password: string, confirm_password: string, new_username?: string) =>
+    request<AdminSession>('POST', '/admin/password', {
+      current_password,
+      new_password,
+      confirm_password,
+      new_username: new_username || null,
+    }),
   apGames: () => request<ApGame[]>('GET', '/archipelago/games'),
   setGameEnabled: (id: number, enabled: boolean) => request<ApGame>('PATCH', `/archipelago/games/${id}`, { enabled }),
   sources: () => request<Source[]>('GET', '/archipelago/sources'),

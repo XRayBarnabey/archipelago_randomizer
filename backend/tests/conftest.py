@@ -1,3 +1,7 @@
+import os
+
+os.environ.setdefault("ENVIRONMENT", "test")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -72,7 +76,7 @@ def db(engine):
 
 @pytest.fixture
 def settings():
-    return Settings(steam_api_key="test-key", steam_cache_duration=3600)
+    return Settings(steam_api_key="test-key", steam_cache_duration=3600, admin_login_delay=0)
 
 
 @pytest.fixture
@@ -83,6 +87,13 @@ def steam():
 @pytest.fixture
 def api_sources():
     return []
+
+
+@pytest.fixture(autouse=True)
+def _reset_throttle():
+    from app.services.auth_service import throttle
+
+    throttle._failures.clear()
 
 
 @pytest.fixture
@@ -100,6 +111,14 @@ def client(engine, steam, api_sources, settings):
     app.dependency_overrides[get_settings] = lambda: settings
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def admin(client):
+    """Client authenticated as the default admin."""
+    token = client.post("/api/admin/login", json={"username": "admin", "password": "admin"}).json()["token"]
+    client.headers["Authorization"] = "Bearer " + token
+    return client
 
 
 def seed_world(db, n_players=3, owned=None, status="official", detail=None, verified=True):

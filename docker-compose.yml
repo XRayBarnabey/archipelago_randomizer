@@ -27,6 +27,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       STEAM_CACHE_DURATION: ${STEAM_CACHE_DURATION:-3600}
       ARCHIPELAGO_SYNC_ENABLED: ${ARCHIPELAGO_SYNC_ENABLED:-true}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"]
       interval: 10s

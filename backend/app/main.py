@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import router
+from app.api.routes import admin_router, router
 from app.config import get_settings
 from app.errors import AppError
 
@@ -33,9 +33,26 @@ def _startup_archipelago_sync() -> None:
         logger.exception("Startup Archipelago sync failed")
 
 
+def _startup_seed() -> None:
+    """Idempotently make sure the default admin credential and the Archipelago sources exist."""
+    from app.api.deps import build_archipelago_sources
+    from app.db import get_session_factory
+    from app.services.archipelago_service import ArchipelagoService
+    from app.services.auth_service import AuthService
+
+    try:
+        with get_session_factory()() as db:
+            AuthService(db, get_settings()).credential()
+            ArchipelagoService(db, build_archipelago_sources()).ensure_sources()
+    except Exception:
+        logger.exception("Startup seeding failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    if settings.environment != "test":
+        _startup_seed()
     logger.info("archipelago_sync_enabled=%s", settings.archipelago_sync_enabled)
     if settings.archipelago_sync_enabled:
         threading.Thread(target=_startup_archipelago_sync, daemon=True).start()
@@ -73,6 +90,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(router, prefix="/api")
+    app.include_router(admin_router, prefix="/api")
     return app
 
 

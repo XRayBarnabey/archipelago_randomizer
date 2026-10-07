@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import (
+    get_auth_service,
+    require_admin,
     get_archipelago_service,
     get_db,
     get_draw_service,
@@ -10,8 +12,9 @@ from app.api.deps import (
     get_steam_service,
 )
 from app.config import get_settings
-from app.errors import NotFoundError
+from app.errors import NotFoundError, ValidationFailed
 from app.models import (
+    AdminCredential,
     ArchipelagoGame,
     ArchipelagoSourceRecord,
     GameMapping,
@@ -20,6 +23,10 @@ from app.models import (
     SteamPlayer,
 )
 from app.schemas import (
+    ClearHistoryOut,
+    LoginRequest,
+    PasswordChangeRequest,
+    SessionOut,
     ArchipelagoGameOut,
     ArchipelagoGameUpdate,
     CommonGamesResponse,
@@ -45,12 +52,14 @@ from app.schemas import (
     SyncResultOut,
 )
 from app.services.archipelago_service import ArchipelagoService
+from app.services.auth_service import AuthService
 from app.services.draw_service import DrawService
 from app.services.eligibility_service import EligibilityService, EligibleGame, Filters
 from app.services.mapping_service import MappingService
 from app.services.steam_service import SteamService
 
 router = APIRouter()
+admin_router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 def _steam_url(app_id: int) -> str:
@@ -170,7 +179,7 @@ def sync_player(player_id: int, force: bool = False, service: SteamService = Dep
 
 
 # --- archipelago -----------------------------------------------------------
-@router.get("/archipelago/games", response_model=list[ArchipelagoGameOut])
+@admin_router.get("/archipelago/games", response_model=list[ArchipelagoGameOut])
 def list_archipelago_games(
     status: str | None = None,
     enabled: bool | None = None,
@@ -197,7 +206,7 @@ def list_archipelago_games(
     return result
 
 
-@router.patch("/archipelago/games/{game_id}", response_model=ArchipelagoGameOut)
+@admin_router.patch("/archipelago/games/{game_id}", response_model=ArchipelagoGameOut)
 def update_archipelago_game(game_id: int, body: ArchipelagoGameUpdate, db: Session = Depends(get_db)):
     game = db.get(ArchipelagoGame, game_id)
     if game is None:
@@ -211,7 +220,7 @@ def update_archipelago_game(game_id: int, body: ArchipelagoGameUpdate, db: Sessi
     return out
 
 
-@router.get("/archipelago/status", response_model=ArchipelagoStatusOut)
+@admin_router.get("/archipelago/status", response_model=ArchipelagoStatusOut)
 def archipelago_status(db: Session = Depends(get_db)):
     verified = GameMapping.verified.is_(True)
     return ArchipelagoStatusOut(
@@ -230,41 +239,41 @@ def archipelago_status(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/archipelago/sources", response_model=list[SourceOut])
+@admin_router.get("/archipelago/sources", response_model=list[SourceOut])
 def list_sources(service: ArchipelagoService = Depends(get_archipelago_service)):
     service.ensure_sources()
     return list(service.db.scalars(select(ArchipelagoSourceRecord).order_by(ArchipelagoSourceRecord.id)))
 
 
-@router.post("/archipelago/sync", response_model=list[SourceSyncResult])
+@admin_router.post("/archipelago/sync", response_model=list[SourceSyncResult])
 def sync_archipelago(service: ArchipelagoService = Depends(get_archipelago_service)):
     return service.sync()
 
 
 # --- mappings --------------------------------------------------------------
-@router.get("/mappings", response_model=list[MappingOut])
+@admin_router.get("/mappings", response_model=list[MappingOut])
 def list_mappings(verified: bool | None = None, db: Session = Depends(get_db)):
     return [_mapping_out(db, m) for m in MappingService(db).list(verified)]
 
 
-@router.post("/mappings", response_model=MappingOut, status_code=201)
+@admin_router.post("/mappings", response_model=MappingOut, status_code=201)
 def create_mapping(body: MappingCreate, db: Session = Depends(get_db)):
     m = MappingService(db).create(**body.model_dump())
     return _mapping_out(db, m)
 
 
-@router.post("/mappings/auto-match")
+@admin_router.post("/mappings/auto-match")
 def auto_match(db: Session = Depends(get_db)):
     return {"created": MappingService(db).auto_match_by_name()}
 
 
-@router.put("/mappings/{mapping_id}", response_model=MappingOut)
+@admin_router.put("/mappings/{mapping_id}", response_model=MappingOut)
 def update_mapping(mapping_id: int, body: MappingUpdate, db: Session = Depends(get_db)):
     m = MappingService(db).update(mapping_id, **body.model_dump(exclude_unset=True))
     return _mapping_out(db, m)
 
 
-@router.delete("/mappings/{mapping_id}", status_code=204)
+@admin_router.delete("/mappings/{mapping_id}", status_code=204)
 def delete_mapping(mapping_id: int, db: Session = Depends(get_db)):
     MappingService(db).delete(mapping_id)
     return Response(status_code=204)
@@ -380,3 +389,45 @@ def draws(limit: int = Query(default=100, ge=1, le=500), service: DrawService = 
         )
         for d in service.history(limit)
     ]
+
+
+@router.delete("/draws", response_model=ClearHistoryOut)
+def clear_draws(service: DrawService = Depends(get_draw_service)):
+    return ClearHistoryOut(deleted=service.clear_history())
+
+
+# --- admin authentication ----------------------------------------------------
+def _session_out(auth: AuthService, cred: AdminCredential, token: str | None = None, expires: int | None = None):
+    return SessionOut(
+        username=cred.username, default_credentials=auth.is_default(cred), token=token, expires_at=expires
+    )
+
+
+@router.post("/admin/login", response_model=SessionOut)
+def admin_login(body: LoginRequest, request: Request, auth: AuthService = Depends(get_auth_service)):
+    client_key = request.client.host if request.client else "unknown"
+    token, expires, cred = auth.login(body.username, body.password, client_key)
+    return _session_out(auth, cred, token, expires)
+
+
+@router.post("/admin/logout", status_code=204)
+def admin_logout(cred: AdminCredential = Depends(require_admin)):
+    # tokens are stateless: the client discards its token; they expire or are invalidated by a password change
+    return Response(status_code=204)
+
+
+@router.get("/admin/session", response_model=SessionOut)
+def admin_session(cred: AdminCredential = Depends(require_admin), auth: AuthService = Depends(get_auth_service)):
+    return _session_out(auth, cred)
+
+
+@router.post("/admin/password", response_model=SessionOut)
+def admin_password(
+    body: PasswordChangeRequest,
+    cred: AdminCredential = Depends(require_admin),
+    auth: AuthService = Depends(get_auth_service),
+):
+    if body.new_password != body.confirm_password:
+        raise ValidationFailed("La confirmation ne correspond pas au nouveau mot de passe.")
+    token, expires = auth.change_credentials(cred, body.current_password, body.new_password, body.new_username)
+    return _session_out(auth, cred, token, expires)

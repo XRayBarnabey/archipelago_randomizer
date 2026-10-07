@@ -140,7 +140,7 @@ def test_nine_players_rejected(client, db):
     assert client.post("/api/draw", json={"player_ids": [1], "filters": {"mode": "bogus"}}).status_code == 422
 
 
-def test_mappings_crud(client, db):
+def test_mappings_crud(client, admin, db):
     _, ap = seed_world(db, 1)
     assert len(client.get("/api/mappings").json()) == 2
     r = client.post("/api/mappings", json={"archipelago_game_id": ap[0].id, "steam_app_id": 999, "verified": False})
@@ -155,7 +155,7 @@ def test_mappings_crud(client, db):
     assert client.delete(f"/api/mappings/{mid}").status_code == 404
 
 
-def test_archipelago_sync_and_games_api(client, api_sources):
+def test_archipelago_sync_and_games_api(client, admin, api_sources):
     api_sources.extend(
         [
             StaticSource("ok", "official", [ArchipelagoGameData("Game A", status="official")]),
@@ -173,7 +173,7 @@ def test_archipelago_sync_and_games_api(client, api_sources):
     assert client.patch(f"/api/archipelago/games/{gid}", json={"enabled": False}).json()["enabled"] is False
 
 
-def test_player_search_and_per_player_endpoints(client, steam):
+def test_player_search_and_per_player_endpoints(client, admin, steam):
     add_player(client, steam, name="Alice")
     add_player(client, steam, sid="76561198000000002", name="Bob")
     r = client.get("/api/players/search", params={"query": "ALI"})

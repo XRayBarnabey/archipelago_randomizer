@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import AdminPage from './pages/AdminPage'
+import AdminGate from './pages/AdminGate'
 import PickerPage from './pages/PickerPage'
 
 export default function App() {
@@ -19,7 +19,7 @@ export default function App() {
           </button>
         </nav>
       </header>
-      {tab === 'picker' ? <PickerPage /> : <AdminPage />}
+      {tab === 'picker' ? <PickerPage /> : <AdminGate />}
     </div>
   )
 }
