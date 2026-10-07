@@ -1,3 +1,4 @@
+import difflib
 import logging
 import time
 from dataclasses import dataclass
@@ -74,6 +75,24 @@ class SteamService:
         return player
 
     # --- sync ----------------------------------------------------------
+    def search_players(self, query: str, limit: int = 10) -> list[SteamPlayer]:
+        q = query.strip().lower()
+        if not q:
+            return []
+        scored: list[tuple[float, int, SteamPlayer]] = []
+        for p in self.db.scalars(select(SteamPlayer)):
+            vanity = (p.profile_url or "").rstrip("/").rsplit("/", 1)[-1].lower()
+            names = [n for n in (p.display_name.lower(), vanity) if n]
+            if any(q in n for n in names):
+                score = 1.0 + (1.0 if any(n.startswith(q) for n in names) else 0.0)
+            else:
+                score = max(difflib.SequenceMatcher(None, q, n).ratio() for n in names) if names else 0.0
+                if score < 0.6:
+                    continue
+            scored.append((-score, p.id, p))
+        scored.sort(key=lambda t: t[:2])
+        return [p for _, _, p in scored[:limit]]
+
     def sync_player(self, player_id: int, force: bool = False) -> SyncResult:
         player = self.db.get(SteamPlayer, player_id)
         if player is None:

@@ -9,6 +9,7 @@ from app.api.deps import (
     get_eligibility_service,
     get_steam_service,
 )
+from app.config import get_settings
 from app.errors import NotFoundError
 from app.models import (
     ArchipelagoGame,
@@ -22,7 +23,12 @@ from app.schemas import (
     ArchipelagoGameOut,
     ArchipelagoGameUpdate,
     CommonGamesResponse,
+    ArchipelagoStatusOut,
     DrawHistoryItem,
+    DrawPerPlayerResponse,
+    PlayerDrawOut,
+    PlayerGamesEntry,
+    PlayerGamesResponse,
     DrawResponse,
     EligibleGameOut,
     MappingCreate,
@@ -86,6 +92,7 @@ def _filters(f) -> Filters:
         exclude_drawn=f.exclude_drawn,
         exclude_last_n=f.exclude_last_n,
         excluded_game_ids=f.excluded_game_ids,
+        allow_duplicates=f.allow_duplicates,
     )
 
 
@@ -128,6 +135,13 @@ def add_player(body: PlayerCreate, service: SteamService = Depends(get_steam_ser
 @router.post("/players/sync", response_model=list[SyncResultOut])
 def sync_all_players(force: bool = False, service: SteamService = Depends(get_steam_service)):
     return [SyncResultOut(**r.__dict__) for r in service.sync_all(force)]
+
+
+@router.get("/players/search", response_model=list[PlayerOut])
+def search_players(
+    query: str = Query(min_length=1, max_length=100), service: SteamService = Depends(get_steam_service)
+):
+    return [_player_out(service.db, p) for p in service.search_players(query)]
 
 
 @router.get("/players/{player_id}", response_model=PlayerOut)
@@ -195,6 +209,25 @@ def update_archipelago_game(game_id: int, body: ArchipelagoGameUpdate, db: Sessi
     return out
 
 
+@router.get("/archipelago/status", response_model=ArchipelagoStatusOut)
+def archipelago_status(db: Session = Depends(get_db)):
+    verified = GameMapping.verified.is_(True)
+    return ArchipelagoStatusOut(
+        sync_enabled=get_settings().archipelago_sync_enabled,
+        games_count=db.scalar(select(func.count()).select_from(ArchipelagoGame)) or 0,
+        enabled_games_count=db.scalar(
+            select(func.count()).select_from(ArchipelagoGame).where(ArchipelagoGame.enabled.is_(True))
+        )
+        or 0,
+        mappings_count=db.scalar(select(func.count()).select_from(GameMapping)) or 0,
+        verified_mappings_count=db.scalar(select(func.count()).select_from(GameMapping).where(verified)) or 0,
+        games_with_verified_mapping=db.scalar(
+            select(func.count(func.distinct(GameMapping.archipelago_game_id))).where(verified)
+        )
+        or 0,
+    )
+
+
 @router.get("/archipelago/sources", response_model=list[SourceOut])
 def list_sources(service: ArchipelagoService = Depends(get_archipelago_service)):
     service.ensure_sources()
@@ -248,6 +281,49 @@ def common_games(
         eligible_games_count=len(games),
         players_count=len(ids),
         games=[_eligible_out(g, len(ids), db) for g in games],
+    )
+
+
+def _player_games(body: SelectionRequest, service: EligibilityService, db: Session):
+    return service.get_games_per_player(body.player_ids, _filters(body.filters))
+
+
+@router.post("/selection/player-games", response_model=PlayerGamesResponse)
+def player_games(
+    body: SelectionRequest,
+    service: EligibilityService = Depends(get_eligibility_service),
+    db: Session = Depends(get_db),
+):
+    players, per_player = _player_games(body, service, db)
+    return PlayerGamesResponse(
+        players_count=len(players),
+        players={
+            p.id: PlayerGamesEntry(
+                player=OwnerOut(id=p.id, display_name=p.display_name),
+                games_count=len(per_player[p.id]),
+                games=[_eligible_out(g, 1, db) for g in per_player[p.id]],
+            )
+            for p in players
+        },
+    )
+
+
+@router.post("/draw/from-player-games", response_model=DrawPerPlayerResponse)
+def draw_from_player_games(
+    body: SelectionRequest, service: DrawService = Depends(get_draw_service), db: Session = Depends(get_db)
+):
+    players, per_player, chosen = service.draw_per_player(body.player_ids, _filters(body.filters))
+    return DrawPerPlayerResponse(
+        players_count=len(players),
+        allow_duplicates=body.filters.allow_duplicates,
+        draws={
+            p.id: PlayerDrawOut(
+                player=OwnerOut(id=p.id, display_name=p.display_name),
+                eligible_games_count=len(per_player[p.id]),
+                selected_game=_eligible_out(chosen[p.id], 1, db),
+            )
+            for p in players
+        },
     )
 
 

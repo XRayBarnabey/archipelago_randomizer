@@ -17,6 +17,42 @@ class NoCommonGames(AppError):
     code = "NO_COMMON_GAMES"
 
 
+class NoCompatibleGames(AppError):
+    status_code = 409
+    code = "NO_COMPATIBLE_GAMES"
+
+
+class DuplicatesUnavoidable(AppError):
+    status_code = 409
+    code = "DUPLICATES_UNAVOIDABLE"
+
+
+def assign_distinct(candidates: dict[int, list[EligibleGame]]) -> dict[int, EligibleGame] | None:
+    """Random assignment of one game per player with distinct archipelago games (bipartite matching)."""
+    options = {pid: _rng.sample(games, len(games)) for pid, games in candidates.items()}
+    owner: dict[int, int] = {}  # archipelago_game_id -> player_id
+    chosen: dict[int, EligibleGame] = {}
+
+    def place(pid: int, seen: set[int]) -> bool:
+        for g in options[pid]:
+            gid = g.archipelago_game.id
+            if gid in seen:
+                continue
+            seen.add(gid)
+            if gid not in owner or place(owner[gid], seen):
+                owner[gid] = pid
+                chosen[pid] = g
+                return True
+        return False
+
+    pids = list(options)
+    _rng.shuffle(pids)
+    for pid in pids:
+        if not place(pid, set()):
+            return None
+    return chosen
+
+
 class DrawService:
     def __init__(self, db: Session, eligibility: EligibilityService):
         self.db = db
@@ -40,6 +76,24 @@ class DrawService:
             "Draw id=%s game=%r players=%d eligible=%d", draw.id, chosen.archipelago_game.name, len(players), len(eligible)
         )
         return draw, chosen, len(eligible), players
+
+    def draw_per_player(self, player_ids: list[int], filters: Filters):
+        players, per_player = self.eligibility.get_games_per_player(player_ids, filters)
+        empty = [p.display_name for p in players if not per_player[p.id]]
+        if empty:
+            raise NoCompatibleGames(
+                "Aucun jeu compatible Archipelago pour : " + ", ".join(empty) + "."
+            )
+        if filters.allow_duplicates:
+            chosen = {p.id: _rng.choice(per_player[p.id]) for p in players}
+        else:
+            chosen = assign_distinct(per_player)
+            if chosen is None:
+                raise DuplicatesUnavoidable(
+                    "Impossible d'attribuer un jeu différent à chaque joueur avec les jeux compatibles disponibles."
+                )
+        logger.info("Per-player draw players=%d", len(players))
+        return players, per_player, chosen
 
     def history(self, limit: int = 100) -> list[Draw]:
         stmt = (
