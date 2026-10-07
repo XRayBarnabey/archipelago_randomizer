@@ -1,10 +1,10 @@
 # Steam × Archipelago Game Picker
 
-Application web self-hosted : sélectionne aléatoirement un jeu compatible [Archipelago](https://archipelago.gg)
-que **tous** les joueurs choisis (1 à 8) possèdent sur Steam.
+Application web self-hosted : tire aléatoirement des jeux compatibles [Archipelago](https://archipelago.gg)
+possédés sur Steam par les joueurs choisis (1 à 8), individuellement ou en commun.
 
 ```
-Profils Steam → Bibliothèques → Intersection → Mapping Steam ↔ Archipelago → Filtres/exclusions → Tirage
+Profils Steam → Bibliothèques → Mapping Steam ↔ Archipelago → Filtres/exclusions → Tirage individuel ou commun
 ```
 
 ## Architecture
@@ -77,9 +77,13 @@ Les bibliothèques ne sont lisibles que si le profil **et** les « Détails des 
    timeout, rate limit) les dernières données valides sont conservées et l'erreur est affichée. Une bibliothèque inaccessible n'est
    jamais traitée comme vide : un joueur sans bibliothèque valide bloque le calcul (`409 LIBRARY_UNAVAILABLE`).
 3. **Sélectionner 1 à 8 joueurs** (un neuvième est impossible côté UI et refusé par l'API).
-4. Le nombre de jeux compatibles s'affiche ; **🎲 Tirer un jeu** effectue le tirage côté serveur (uniforme) et l'enregistre dans l'historique.
-   « Ne pas proposer les jeux déjà tirés » exclut les jeux de l'historique (l'API accepte aussi `exclude_last_n` et `excluded_game_ids`).
-5. Aucun jeu commun : `409 {"error": "NO_COMMON_GAMES", ...}`.
+4. Le mode **Individuel** est sélectionné par défaut : chaque joueur reçoit un jeu compatible qu'il possède. Les jeux sont distincts
+   entre joueurs ; le serveur calcule une affectation complète avant de l'enregistrer. Si un joueur n'a aucun candidat, l'API renvoie
+   `409 NO_COMPATIBLE_GAMES`. Si les candidats existent mais ne permettent pas une affectation sans doublon, elle renvoie
+   `409 DUPLICATES_UNAVOIDABLE` sans enregistrer de tirage. Chaque résultat individuel apparaît dans l'historique pour son joueur.
+5. Le mode **Commun** conserve le tirage d'un seul jeu possédé par tous : **🎲 Tirer un jeu commun**. Aucun jeu commun :
+   `409 {"error": "NO_COMMON_GAMES", ...}`. « Ne pas proposer les jeux déjà tirés » exclut les jeux de l'historique (l'API accepte aussi
+   `exclude_last_n` et `excluded_game_ids`).
 
 ### Synchronisation Archipelago et mappings
 
@@ -91,7 +95,9 @@ seul l'App ID exact présent dans la bibliothèque compte.
 ### API
 
 Principales routes (`/api/…`) : `health`, `players` (+ `/{id}`, `/{id}/sync`, `/sync`), `archipelago/games|sources|sync`,
-`mappings` (+ `/{id}`, `/auto-match`), `selection/common-games`, `draw`, `draws`. Erreurs métier : `{"error": CODE, "message": …}`.
+`mappings` (+ `/{id}`, `/auto-match`), `selection/common-games`, `selection/player-games`, `draw` (commun, rétrocompatible),
+`draw/per-player` (un résultat par joueur, unicité activée par défaut), `draws`. L'historique commun reste un élément avec tous ses joueurs ;
+les tirages individuels sont enregistrés comme un élément par joueur. Erreurs métier : `{"error": CODE, "message": …}`.
 
 ## Tests
 

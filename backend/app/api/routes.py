@@ -26,6 +26,8 @@ from app.schemas import (
     ArchipelagoStatusOut,
     DrawHistoryItem,
     DrawPerPlayerResponse,
+    DrawPerPlayerResultsResponse,
+    PerPlayerDrawResult,
     PlayerDrawOut,
     PlayerGamesEntry,
     PlayerGamesResponse,
@@ -324,6 +326,29 @@ def draw_from_player_games(
             )
             for p in players
         },
+    )
+
+
+@router.post("/draw/per-player", response_model=DrawPerPlayerResultsResponse)
+def draw_per_player(
+    body: SelectionRequest, service: DrawService = Depends(get_draw_service), db: Session = Depends(get_db)
+):
+    players, per_player, chosen, draws = service.draw_per_player_and_record(
+        body.player_ids, _filters(body.filters)
+    )
+    return DrawPerPlayerResultsResponse(
+        players_count=len(players),
+        eligible_games_count=sum(len(per_player[p.id]) for p in players),
+        allow_duplicates=body.filters.allow_duplicates,
+        results=[
+            PerPlayerDrawResult(
+                draw_id=draws[p.id].id,
+                player=OwnerOut(id=p.id, display_name=p.display_name),
+                eligible_games_count=len(per_player[p.id]),
+                selected_game=_eligible_out(chosen[p.id], 1, db),
+            )
+            for p in players
+        ],
     )
 
 
